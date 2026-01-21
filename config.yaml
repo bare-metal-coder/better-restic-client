@@ -1,0 +1,14 @@
+backup:
+  frequency: "daily"
+  time: "02:00"
+  directories:
+    - /home/user/documents
+    - /home/user/pictures
+  exclude:
+    - /home/user/documents/temp
+    - /home/user/pictures/cache
+
+logging:
+  directory: /var/log/restic
+  max_size: "10MB"
+
