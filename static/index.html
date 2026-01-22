@@ -265,6 +265,7 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('config')">Configuration</button>
             <button class="tab" onclick="switchTab('yaml')">YAML Config</button>
+            <button class="tab" onclick="switchTab('snapshots')">Snapshots</button>
             <button class="tab" onclick="switchTab('logs')">Logs</button>
             <button class="tab" onclick="switchTab('status')">Status</button>
         </div>
@@ -291,6 +292,20 @@
                     </div>
                     <textarea id="yaml-editor" class="yaml-view" style="font-family: 'Courier New', monospace; width: 100%; min-height: 500px; resize: vertical; border: 1px solid #444; padding: 15px;"></textarea>
                     <div id="yaml-message" style="margin-top: 10px;"></div>
+                </div>
+            </div>
+
+            <!-- Snapshots Tab -->
+            <div id="snapshots" class="tab-content">
+                <div class="card">
+                    <h3>Backup Snapshots</h3>
+                    <button class="refresh-btn" onclick="loadSnapshots()">Refresh</button>
+                    <div id="snapshots-content" style="margin-top: 20px;">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Loading snapshots...</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -344,6 +359,8 @@
                 loadConfig();
             } else if (tabName === 'yaml') {
                 loadYaml();
+            } else if (tabName === 'snapshots') {
+                loadSnapshots();
             } else if (tabName === 'logs') {
                 loadLogs();
                 // Auto-refresh logs every 5 seconds
@@ -520,6 +537,70 @@
                 document.getElementById('logs-content').textContent = 
                     `Error loading logs: ${error.message}`;
             }
+        }
+
+        async function loadSnapshots() {
+            try {
+                const response = await fetch('/api/snapshots');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+                }
+                const data = await response.json();
+                
+                if (data.snapshots && data.snapshots.length > 0) {
+                    const html = `
+                        <div style="margin-bottom: 15px;">
+                            <span class="badge badge-info">Total: ${data.count} snapshot${data.count !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px;">
+                                <thead>
+                                    <tr style="background: #f8f9fa; border-bottom: 2px solid #e9ecef;">
+                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #667eea;">ID</th>
+                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #667eea;">Time</th>
+                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #667eea;">Host</th>
+                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #667eea;">Paths</th>
+                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #667eea;">Size</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.snapshots.map(snap => {
+                                        const time = new Date(snap.time || snap.short_id || '').toLocaleString();
+                                        const host = snap.hostname || 'N/A';
+                                        const paths = (snap.paths || []).join(', ') || 'N/A';
+                                        const size = snap.total_size_processed ? formatBytes(snap.total_size_processed) : 'N/A';
+                                        const id = snap.short_id || snap.id || 'N/A';
+                                        return `
+                                            <tr style="border-bottom: 1px solid #e9ecef;">
+                                                <td style="padding: 12px; font-family: monospace; font-size: 0.9em;">${id}</td>
+                                                <td style="padding: 12px;">${time}</td>
+                                                <td style="padding: 12px;">${host}</td>
+                                                <td style="padding: 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${paths}">${paths}</td>
+                                                <td style="padding: 12px; text-align: right;">${size}</td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                    document.getElementById('snapshots-content').innerHTML = html;
+                } else {
+                    document.getElementById('snapshots-content').innerHTML = 
+                        '<div style="text-align: center; padding: 40px; color: #666;">No snapshots found. Run a backup to create snapshots.</div>';
+                }
+            } catch (error) {
+                document.getElementById('snapshots-content').innerHTML = 
+                    `<div class="error">Error loading snapshots: ${error.message}</div>`;
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
 
         async function loadStatus() {

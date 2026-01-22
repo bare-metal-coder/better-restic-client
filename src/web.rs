@@ -36,6 +36,7 @@ pub async fn run_web_server(state: AppState) -> Result<(), Box<dyn std::error::E
         .route("/api/config", get(get_config))
         .route("/api/logs", get(get_logs))
         .route("/api/status", get(get_status))
+        .route("/api/snapshots", get(get_snapshots))
         .route("/api/config/yaml", get(get_config_yaml))
         .route("/api/config/yaml", post(update_config_yaml))
         .route("/api/backup/trigger", post(trigger_backup))
@@ -193,4 +194,50 @@ async fn get_status(State(_state): State<AppState>) -> Json<serde_json::Value> {
         "uptime": "N/A",
         "last_backup": "N/A",
     }))
+}
+
+async fn get_snapshots(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let config = state.config.read().await;
+    
+    // Build restic snapshots command
+    let mut cmd = tokio::process::Command::new("restic");
+    cmd.arg("snapshots");
+    cmd.arg("--repo").arg(&config.restic.repository);
+    cmd.arg("--json"); // Get JSON output for easier parsing
+    
+    // Handle password
+    if let Some(ref password_cmd) = config.restic.password_command {
+        cmd.arg("--password-command").arg(password_cmd);
+    } else if let Some(ref password) = config.restic.password {
+        cmd.env("RESTIC_PASSWORD", password);
+    }
+    
+    // Set SSH command if provided
+    if let Some(ref ssh_cmd) = config.restic.ssh_command {
+        cmd.env("RESTIC_SSH_COMMAND", ssh_cmd);
+    }
+    
+    drop(config); // Release the lock
+    
+    // Execute the command
+    let output = cmd.output().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("Restic snapshots error: {}", stderr);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    
+    // Parse JSON output from restic
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let snapshots: Vec<serde_json::Value> = serde_json::from_str(&stdout)
+        .map_err(|e| {
+            eprintln!("Failed to parse snapshots JSON: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    Ok(Json(json!({
+        "snapshots": snapshots,
+        "count": snapshots.len()
+    })))
 }
