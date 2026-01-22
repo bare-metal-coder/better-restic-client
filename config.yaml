@@ -2,13 +2,15 @@ backup:
   frequency: "daily"
   time: "02:00"
   directories:
-    - /home/user/documents
-    - /home/user/pictures
+    - /home/manas_maheshwari/Projects
   exclude:
-    - /home/user/documents/temp
-    - /home/user/pictures/cache
+    - /tmp/cache
 
 logging:
-  directory: /var/log/restic
+  directory: ~/.local/log/restic
   max_size: "10MB"
 
+restic:
+  repository: 'sftp:backup-target:/restic-linux'
+  password: '1240_foxworthy'  # Optional: direct password (less secure than password_command)
+  # password_command: 'security find-generic-password -a atlas -s restic-desktop-backup -w'  # Optional: command to retrieve password

@@ -9,6 +9,8 @@ A minimal Rust application for configuring and managing restic backups.
 - Multiple backup directories
 - Exclude patterns
 - Rolling log files with configurable max size
+- Restic command execution with dry-run support
+- Command preview mode
 
 ## Configuration
 
@@ -21,6 +23,18 @@ Edit `config.yaml` to configure your backups:
 - `logging.directory`: Directory for log files
 - `logging.max_size`: Maximum log file size (e.g., "10MB", "100KB")
 
+## Environment Variables
+
+Before running, make sure to export the required restic environment variables:
+
+```bash
+export RESTIC_REPOSITORY='sftp:desktop-backup:/restic-imac'
+export RESTIC_SSH_COMMAND='ssh -F ~/.ssh/config'
+export RESTIC_PASSWORD_COMMAND='security find-generic-password -a atlas -s restic-desktop-backup -w'
+```
+
+These can also be added to your shell profile (e.g., `~/.bashrc` or `~/.zshrc`) or exported from a separate script.
+
 ## Building
 
 ```bash
@@ -29,9 +43,37 @@ cargo build --release
 
 ## Running
 
+### Print Commands (Default Mode)
+
+By default, the client will print the restic commands that would be executed:
+
 ```bash
 cargo run
 ```
 
-Make sure to create and edit `config.yaml` before running.
+### Dry Run Mode
+
+To execute restic commands in dry-run mode (test without actually backing up):
+
+```bash
+cargo run -- --dry-run
+# or
+cargo run -- -n
+```
+
+This will execute `restic backup` with the `--dry-run` flag to show what would be backed up without actually performing the backup.
+
+## Example Output
+
+When running without `--dry-run`, you'll see the command that would be executed:
+
+```
+Restic command: Command { program: "restic", args: ["backup", "/path/to/dir", "--exclude", "/path/to/exclude"] }
+PRINT MODE: Command to execute:
+Command { program: "restic", args: ["backup", "/path/to/dir", "--exclude", "/path/to/exclude"] }
+
+To execute this command, run it manually or use --dry-run to test it.
+```
+
+When running with `--dry-run`, the command will be executed and you'll see the output from restic.
 
