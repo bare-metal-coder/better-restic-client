@@ -11,6 +11,7 @@ A minimal Rust application for configuring and managing restic backups.
 - Rolling log files with configurable max size
 - Restic command execution with dry-run support
 - Command preview mode
+- **Modern Web UI** - Beautiful dashboard for viewing configuration, logs, and status
 
 ## Configuration
 
@@ -62,6 +63,24 @@ cargo run -- -n
 ```
 
 This will execute `restic backup` with the `--dry-run` flag to show what would be backed up without actually performing the backup.
+
+### Web UI Mode
+
+Launch a modern web-based dashboard to view configuration, logs, and status:
+
+```bash
+cargo run -- --ui
+# or
+cargo run -- -u
+```
+
+This will start a web server at `http://127.0.0.1:3000` where you can:
+- View and inspect your configuration
+- Browse YAML configuration file
+- View real-time logs with syntax highlighting
+- Check system status
+
+The web UI features a modern, responsive design with tabs for easy navigation.
 
 ## Example Output
 

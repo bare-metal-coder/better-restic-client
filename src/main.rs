@@ -1,22 +1,24 @@
+mod web;
+
 use anyhow::Result;
 use log::{info, error, debug};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
+use tokio::process::Command;
 
 #[derive(Debug, Deserialize, Serialize)]
-struct Config {
+pub struct Config {
     backup: BackupConfig,
     logging: LoggingConfig,
     restic: ResticConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct BackupConfig {
-    frequency: String,
-    time: String,
-    directories: Vec<PathBuf>,
-    exclude: Vec<PathBuf>,
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BackupConfig {
+    pub frequency: String,
+    pub time: String,
+    pub directories: Vec<PathBuf>,
+    pub exclude: Vec<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -25,22 +27,24 @@ struct LoggingConfig {
     max_size: String, // e.g., "10MB", "100KB"
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct ResticConfig {
-    repository: String,
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ResticConfig {
+    pub repository: String,
     #[serde(default)]
-    ssh_command: Option<String>,
+    pub ssh_command: Option<String>,
     #[serde(default)]
-    password_command: Option<String>,
+    pub password_command: Option<String>,
     #[serde(default)]
-    password: Option<String>,
+    pub password: Option<String>,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Check for command-line flags
     let args: Vec<String> = std::env::args().collect();
     let dry_run = args.iter().any(|arg| arg == "--dry-run" || arg == "-n");
     let verbose = args.iter().any(|arg| arg == "--verbose" || arg == "-v");
+    let ui_mode = args.iter().any(|arg| arg == "--ui" || arg == "-u");
 
     // Read config from YAML file
     let config_path = "config.yaml";
@@ -49,9 +53,33 @@ fn main() -> Result<()> {
     let config: Config = serde_yaml::from_str(&config_content)?;
     debug!("Config loaded successfully");
 
-    // Set up rolling logs with verbose level if requested
+    // Set up rolling logs (needed for both UI and CLI modes)
     let log_level = if verbose { "debug" } else { "info" };
     setup_logging(&config.logging, log_level)?;
+
+    // If UI mode, start web server
+    if ui_mode {
+        // Expand tilde in log directory
+        let log_dir = if config.logging.directory.to_string_lossy().starts_with("~") {
+            let home = std::env::var("HOME")
+                .map_err(|_| anyhow::anyhow!("HOME environment variable not set"))?;
+            let path_str = config.logging.directory.to_string_lossy().replace("~", &home);
+            PathBuf::from(path_str)
+        } else {
+            config.logging.directory.clone()
+        };
+
+        use tokio::sync::RwLock;
+        use std::sync::Arc;
+        
+        let app_state = web::AppState {
+            config: Arc::new(RwLock::new(config)),
+            config_path: config_path.to_string(),
+            log_dir,
+        };
+
+        return web::run_web_server(app_state).await.map_err(|e| anyhow::anyhow!("Web server error: {}", e));
+    }
 
     info!("Better Restic Client starting up");
     info!("Backup frequency: {}", config.backup.frequency);
@@ -75,7 +103,7 @@ fn main() -> Result<()> {
     }
 
     // Execute restic backup
-    execute_restic_backup(&config.backup, &config.restic, dry_run, verbose)?;
+    execute_restic_backup(&config.backup, &config.restic, dry_run, verbose).await?;
 
     Ok(())
 }
@@ -155,7 +183,7 @@ fn parse_size(size_str: &str) -> Result<u64> {
     Ok(bytes)
 }
 
-fn execute_restic_backup(backup_config: &BackupConfig, restic_config: &ResticConfig, dry_run: bool, verbose: bool) -> Result<()> {
+pub async fn execute_restic_backup(backup_config: &BackupConfig, restic_config: &ResticConfig, dry_run: bool, verbose: bool) -> Result<()> {
     debug!("Building restic backup command");
     
     // Build restic backup command
@@ -241,7 +269,7 @@ fn execute_restic_backup(backup_config: &BackupConfig, restic_config: &ResticCon
         debug!("Command: {:?}", cmd);
         
         // Execute the command
-        let output = cmd.output().map_err(|e| {
+        let output = cmd.output().await.map_err(|e| {
             let error_msg = format!(
                 "Failed to execute restic command: {}. \
                 Make sure 'restic' is installed and available in your PATH. \
@@ -346,7 +374,7 @@ fn execute_restic_backup(backup_config: &BackupConfig, restic_config: &ResticCon
         println!("Executing: {}", cmd_string);
         
         // Execute the command and stream output
-        let output = cmd.output().map_err(|e| {
+        let output = cmd.output().await.map_err(|e| {
             let error_msg = format!(
                 "Failed to execute restic command: {}. \
                 Make sure 'restic' is installed and available in your PATH. \
